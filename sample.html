@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Sample</title>
+</head>
+
+<style>
+    body {
+        background-color: #000;
+        font-family: Arial, Helvetica, sans-serif;
+        display: flex;
+        flex-direction: column;
+        justify-content: start;
+        align-items: center;
+        height: 100%;
+    }
+
+    button {
+        cursor: pointer;
+    }
+
+    .title {
+        color: #723EE2;
+    }
+
+    .log {
+        margin-top: 10px;
+        background: #F3F4F6;
+        width: 40%;
+        height: 75vh;
+        overflow-y: scroll;
+        padding: 10px;
+    }
+
+    .log span {
+        display: block;
+        margin-bottom: 10px;
+    }
+
+    .clear {
+        margin-top: 5px;
+    }
+
+    .grid-container {
+        margin-top: 5px;
+        display: grid;
+        grid-template-columns: repeat(2, 200px);
+        grid-gap: 3em;
+        justify-content: center;
+    }
+
+    .grid-item {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        grid-template-rows: 1fr 2fr 1fr;
+        grid-gap: 5px;
+        background-color: white;
+        color: black;
+        font-size: 1.5em;
+        padding: 10px;
+        border-radius: 5%;
+        box-shadow: 0px 5px 15px grey;
+    }
+
+    .heart {
+        text-align: center;
+        align-self: center;
+        font-size: 2em;
+        /* color: red; */
+    }
+
+    .top-left {
+        padding: 0.1em;
+    }
+
+    .bottom-right {
+        align-self: end;
+        transform: rotate(180deg);
+    }
+</style>
+
+<body>
+    <h1 class="title">Colyseus Client</h1>
+    <div class="feature">
+        <div class="join">
+            <button onclick="joinOrCreate()">Create</button>
+            <input type="text" id="roomId" placeholder="Enter Room Id">
+            <button onclick="joinById()">Join by ID</button>
+        </div>
+        <div class="leave">
+            <button id="ready">Ready</button>
+            <button id="leave">Leave</button>
+        </div>
+        <div class="bet">
+            <input type="text" id="betAmount" placeholder="Enter Bet Amount">
+            <button id="bet">Bet</button>
+        </div>
+        <!-- <button id="join">Join</button> -->
+        <!-- <button id="reconnect">Reconnect</button> -->
+        <!-- <button id="getRooms">Get Available Rooms</button> -->
+    </div>
+    <div class="log"></div>
+    <button class="clear" onclick="clearLog()">Clear Log</button>
+
+    <div class="card"></div>
+    <!-- <div class="grid-container">
+        <div class="grid-item">
+            <div class="top-left">A<br>
+                <div style="color:red">♥</div>
+            </div>
+            <div></div>
+            <div></div>
+            <div></div>
+            <div class="heart">♥</div>
+            <div></div>
+            <div></div>
+            <div></div>
+            <div class="bottom-right">A<br>
+                <div style="color:red;">♥</div>
+            </div>
+        </div>
+    </div>
+    </div> -->
+
+    <script src="https://unpkg.com/colyseus.js@^0.15.0/dist/colyseus.js"></script>
+    <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+    <script>
+        var client = new Colyseus.Client('ws://localhost:2567');
+
+        function setReconnectionToken(token) {
+            localStorage.setItem('reconnectionToken', token);
+        }
+        function getReconnectionToken() {
+            return localStorage.getItem('reconnectionToken');
+        }
+
+        $(".leave").hide();
+        $(".bet").hide();
+
+        function joinOrCreate() {
+            client.joinOrCreate("my_room", {/* options */ }).then(room => {
+                setReconnectionToken(room.reconnectionToken);
+
+                onMessage(room);
+                onAdd(room);
+                $(".card").append(`<div class="grid-container" id="${room.sessionId}"></div>`);
+
+                $(".log").prepend(`<span>${room.roomId} created!</span>`);
+                joinAfter(room);
+
+                $("#ready").click(function () {
+                    room.send("ready", true);
+                });
+
+                $("#leave").click(function () {
+                    room.leave();
+                    leaveAfter(room);
+                });
+
+                $("#bet").click(function () {
+                    amount = $("#betAmount").val();
+                    room.send("bet", parseInt(amount));
+                });
+            }).catch(e => {
+                console.error("join error", e);
+            });
+        };
+
+        function joinById() {
+            roomId = $("#roomId").val();
+            client.joinById(roomId, {/* options */ }).then(room => {
+                setReconnectionToken(room.reconnectionToken);
+
+                onMessage(room);
+                onAdd(room);
+                $(".card").append(`<div class="grid-container" id="${room.sessionId}"></div>`);
+
+                joinAfter(room);
+
+                $("#ready").click(function () {
+                    room.send("ready", true);
+                });
+
+                $("#leave").click(function () {
+                    room.leave();
+                    leaveAfter(room);
+                });
+
+                $("#bet").click(function () {
+                    amount = $("#betAmount").val();
+                    room.send("bet", parseInt(amount));
+                });
+            }).catch(e => {
+                console.error("join error", e);
+            });
+        };
+
+        function joinAfter(room) {
+            $(".join").hide();
+            $(".leave").show();
+            // onMessage(room);
+        }
+
+        function leaveAfter(room) {
+            $(".join").show();
+            $(".leave").hide();
+            // onMessage(room);
+        }
+
+        function onAdd(room) {
+            room.state.onChange(() => {
+                if (room.state.roundState == "dealing") {
+                    $(".leave").hide();
+                    $(".bet").show();
+                }
+            });
+            room.state.players.onAdd(function (player, sessionId) {
+                // if (player.sessionId == sessionId) {
+                player.hand.cards.onAdd(function (card, index) {
+                    // card.onChange(function (changes) {
+                    //     console.log("card changed", card, index, changes);
+                    // });
+                    console.log("card added", card, index);
+                    switch (card.value.suit) {
+                        case 'S':
+                            suit = '♠️';
+                            color = 'black';
+                            break;
+                        case 'H':
+                            suit = '♥';
+                            color = 'red';
+                            break;
+                        case 'D':
+                            suit = '♦️';
+                            color = 'red';
+                            break;
+                        case 'C':
+                            suit = '♣️';
+                            color = 'black';
+                            break;
+                        default:
+                            suit = '';
+                            color = '';
+                            break;
+                    }
+                    $(`#${sessionId}`).prepend(`<div class="grid-item">
+            <div class="top-left" style="color:${color}">${card.value.value}<br>
+                <div style="color:${color}">${suit}</div>
+            </div>
+            <div></div>
+            <div></div>
+            <div></div>
+            <div class="heart" style="color:${color}">${suit}</div>
+            <div></div>
+            <div></div>
+            <div></div>
+            <div class="bottom-right" style="color:${color}">${card.value.value}<br>
+                <div style="color:${color};">${suit}</div>
+            </div>
+        </div>
+    </div>`);
+                });
+            // }
+            });
+        }
+
+        function onMessage(room) {
+            room.onMessage("log", function (log) {
+                $(".log").prepend(`<span>${log}</span>`);
+            });
+        }
+
+        function clearLog() {
+            $(".log").empty();
+        }
+
+        // $("#reconnect").click(function () {
+        //     const cachedReconnectionToken = getReconnectionToken();
+        //     client.reconnect(cachedReconnectionToken).then(room => {
+        //         console.log("joined successfully", room);
+        //     }).catch(e => {
+        //         console.error("join error", e);
+        //     });
+        // });
+        // $("#getRooms").click(function () {
+        //     client.getAvailableRooms("my_room").then(rooms => {
+        //         rooms.forEach((room) => {
+        //             console.log('Room Id: ', room.roomId);
+        //             console.log('Clients: ', room.clients);
+        //             console.log('Max Clients: ', room.maxClients);
+        //             console.log('Meta Data: ', room.metadata);
+        //         });
+        //     }).catch(e => {
+        //         console.error(e);
+        //     });
+        // });
+        // $("#join").click(function () {
+        //     client.join("my_room", {/* options */ }).then(room => {
+        //         setReconnectionToken(room.reconnectionToken);
+        //         console.log("joined successfully", room);
+        //     }).catch(e => {
+        //         console.error("join error", e);
+        //     });
+        // });
+    </script>
+</body>
+</body>
+
+</html>
