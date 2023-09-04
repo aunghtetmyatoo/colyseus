@@ -3,7 +3,8 @@ export default {
   roomIdLength: 4,
 
   //All times are in ms
-  inactivityTimeout: 30000,
+  // inactivityTimeout: 30000,
+  inactivityTimeout: 5000,
   roomDeleteTimeout: 60000,
   delayedRoundStartTime: 2000,
   roundStateDealingTime: 1000,

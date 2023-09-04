@@ -1,14 +1,19 @@
 import { Room, Client, Delayed } from "@colyseus/core";
 import { MyRoomState } from "./schema/MyRoomState";
 import { ShanKoeMeeRoomState, Player } from "./schema/ShanKoeeMeeRoomState";
+import gameConfig from '../game.config';
 import {
   generateRoomId,
+  generateUserName,
 } from "./utility";
 
 export class MyRoom extends Room<ShanKoeMeeRoomState> {
   maxClients = 4;
 
+  public inactivityTimeoutRef?: Delayed;
   public delayedRoundStartRef?: Delayed;
+
+  private roundPlayersIdIterator: IterableIterator<string>;
 
   private LOBBY_CHANNEL = "GameRoom";
 
@@ -62,11 +67,16 @@ export class MyRoom extends Room<ShanKoeMeeRoomState> {
       this.broadcast("log", `${ client.sessionId } ${newBet} bet!`);
     });
 
-    this.onMessage("type", (client, message) => {
-      //
-      // handle "type" message
-      //
+    this.onMessage("hit", (client) => {
+      // if (client.sessionId != this.state.currentTurnPlayerId) return;
+      const player = this.state.players.get(client.sessionId);
+      if (player.hand.cards.length >= 3) return;
+      player.hand.addCard();
     });
+    // this.onMessage("stay", (client) => {
+    //   if (client.sessionId != this.state.currentTurnPlayerId) return;
+    //   this.turn();
+    // });
   }
 
   onJoin (client: Client, options: any) {
@@ -75,7 +85,7 @@ export class MyRoom extends Room<ShanKoeMeeRoomState> {
       client.sessionId,
       new Player({
         sessionId: client.sessionId,
-        displayName: 'kotharaye',
+        displayName: generateUserName(),
         // admin: this.state.players.size == 0,
       })
     );
@@ -112,7 +122,10 @@ export class MyRoom extends Room<ShanKoeMeeRoomState> {
 
   private async startRound() {
     this.broadcast("log", "Starting round!");
-    this.state.roundState = "dealing";
+    this.state.roundState = "bet";
+    await this.delay(5000);
+
+    this.state.roundState = "shareCard";
 
     for (const playerId of this.makeRoundIterator()) {
       const player = this.state.players.get(playerId);
@@ -135,13 +148,52 @@ export class MyRoom extends Room<ShanKoeMeeRoomState> {
     // await this.delay(3000);
 
     // this.log(`Starting turns phase`);
+    console.log(`Starting turns phase`);
 
-    // this.state.roundState = "turns";
+    // this.state.roundState = "viewCard";
 
-    //Setup iterator for turns
-    // this.roundPlayersIdIterator = this.makeRoundIterator();
+    // Setup iterator for turns
+    this.roundPlayersIdIterator = this.makeRoundIterator();
 
     // this.turn();
+  }
+
+  private turn() {
+    // New turn, do not skip player from previous turn
+    this.state.currentTurnTimeoutTimestamp = 0;
+    this.inactivityTimeoutRef?.clear();
+
+    // Get next player
+    const nextPlayer = this.roundPlayersIdIterator.next();
+    this.state.currentTurnPlayerId = nextPlayer.value || "";
+
+    // If there are no more players, end current round
+    if (nextPlayer.done) {
+      this.endRound();
+      return;
+    }
+
+    // this.log("Turn", this.state.currentTurnPlayerId);
+    console.log("Turn", this.state.currentTurnPlayerId);
+
+    //Skip round if player has blackjack
+    // if (this.state.players.get(this.state.currentTurnPlayerId).hand.isBlackjack)
+    //   this.turn();
+    // else this.setInactivitySkipTimeout();
+    this.setInactivitySkipTimeout();
+  }
+
+  private setInactivitySkipTimeout() {
+    this.state.currentTurnTimeoutTimestamp =
+      Date.now() + gameConfig.inactivityTimeout;
+
+    this.inactivityTimeoutRef?.clear();
+
+    this.inactivityTimeoutRef = this.clock.setTimeout(() => {
+      // this.log('Inactivity timeout', this.state.currentTurnPlayerId);
+      console.log('Inactivity timeout', this.state.currentTurnPlayerId)
+      this.turn();
+    }, gameConfig.inactivityTimeout);
   }
 
   public roundIteratorOffset = 0;
@@ -163,5 +215,75 @@ export class MyRoom extends Room<ShanKoeMeeRoomState> {
       //Otherwise yield the new player id
       yield player.sessionId;
     }
+  }
+
+  private delay(ms: number) {
+    return new Promise((resolve) => this.clock.setTimeout(resolve, ms));
+  }
+
+  private async endRound() {
+    // this.log(`Starting end phase`);
+    console.log(`Starting end phase`);
+
+    this.state.roundState = 'end';
+
+    //Show dealers hidden card
+    // this.state.dealerHand.cards.at(1).visible = true;
+
+    //Calculate hand value after showing hidden card
+    // this.state.dealerHand.calculateScore();
+
+    //Do not deal dealer cards if all players are busted
+    if (!this.makeRoundIterator().next().done) {
+      //Dealer draws cards until total is at least 17
+      // while (this.state.dealerHand.score < 17) {
+      //   await this.delay(gameConfig.dealerCardDelay);
+      //   this.state.dealerHand.addCard();
+      // }
+
+      //Delay showing round outcome to players
+      await this.delay(gameConfig.roundOutcomeDelay);
+
+      //Settle score between each player that's not busted, and dealer
+      for (const playerId of this.makeRoundIterator()) {
+        const player = this.state.players.get(playerId);
+
+        // const outcome = computeRoundOutcome(
+        //   player.hand,
+        //   this.state.dealerHand,
+        //   player.bet
+        // );
+
+        // player.roundOutcome = outcome.outcome;
+        // player.money += outcome.moneyChange;
+      }
+    }
+
+    //Delay starting next phase
+    await this.delay(
+      gameConfig.roundStateEndTimeBase +
+        this.state.players.size * gameConfig.roundStateEndTimePlayer
+    );
+
+    //Remove dealer cards
+    // this.state.dealerHand.clear();
+
+    //Remove all players cards, and set their ready state
+    for (const player of this.state.players.values()) {
+      player.hand.clear();
+      player.ready = player.autoReady;
+      player.roundOutcome = '';
+
+      //Remove players that are still disconnected
+      // if (player.disconnected) this.deletePlayer(player.sessionId);
+    }
+
+    //Change starting player on next round
+    this.roundIteratorOffset++;
+
+    // this.log(`Starting idle phase`);
+    console.log(`Starting idle phase`);
+    this.state.roundState = 'idle';
+    this.triggerNewRoundCheck();
   }
 }

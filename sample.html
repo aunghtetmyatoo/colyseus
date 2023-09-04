@@ -96,6 +96,9 @@
             <input type="text" id="betAmount" placeholder="Enter Bet Amount">
             <button id="bet">Bet</button>
         </div>
+        <div class="shareCard">
+            <button id="hit">Pick Card</button>
+        </div>
         <!-- <button id="join">Join</button> -->
         <!-- <button id="reconnect">Reconnect</button> -->
         <!-- <button id="getRooms">Get Available Rooms</button> -->
@@ -104,24 +107,6 @@
     <button class="clear" onclick="clearLog()">Clear Log</button>
 
     <div class="card"></div>
-    <!-- <div class="grid-container">
-        <div class="grid-item">
-            <div class="top-left">A<br>
-                <div style="color:red">♥</div>
-            </div>
-            <div></div>
-            <div></div>
-            <div></div>
-            <div class="heart">♥</div>
-            <div></div>
-            <div></div>
-            <div></div>
-            <div class="bottom-right">A<br>
-                <div style="color:red;">♥</div>
-            </div>
-        </div>
-    </div>
-    </div> -->
 
     <script src="https://unpkg.com/colyseus.js@^0.15.0/dist/colyseus.js"></script>
     <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
@@ -137,31 +122,14 @@
 
         $(".leave").hide();
         $(".bet").hide();
+        $(".shareCard").hide();
 
         function joinOrCreate() {
             client.joinOrCreate("my_room", {/* options */ }).then(room => {
                 setReconnectionToken(room.reconnectionToken);
-
-                onMessage(room);
-                onAdd(room);
-                $(".card").append(`<div class="grid-container" id="${room.sessionId}"></div>`);
-
                 $(".log").prepend(`<span>${room.roomId} created!</span>`);
-                joinAfter(room);
 
-                $("#ready").click(function () {
-                    room.send("ready", true);
-                });
-
-                $("#leave").click(function () {
-                    room.leave();
-                    leaveAfter(room);
-                });
-
-                $("#bet").click(function () {
-                    amount = $("#betAmount").val();
-                    room.send("bet", parseInt(amount));
-                });
+                onProcess(room);
             }).catch(e => {
                 console.error("join error", e);
             });
@@ -172,56 +140,59 @@
             client.joinById(roomId, {/* options */ }).then(room => {
                 setReconnectionToken(room.reconnectionToken);
 
-                onMessage(room);
-                onAdd(room);
-                $(".card").append(`<div class="grid-container" id="${room.sessionId}"></div>`);
-
-                joinAfter(room);
-
-                $("#ready").click(function () {
-                    room.send("ready", true);
-                });
-
-                $("#leave").click(function () {
-                    room.leave();
-                    leaveAfter(room);
-                });
-
-                $("#bet").click(function () {
-                    amount = $("#betAmount").val();
-                    room.send("bet", parseInt(amount));
-                });
+                onProcess(room);
             }).catch(e => {
                 console.error("join error", e);
             });
         };
 
-        function joinAfter(room) {
+        function onProcess(room) {
+            onMessage(room);
+            onAdd(room);
+            $(".card").append(`<div class="grid-container" id="${room.sessionId}"></div>`);
+
             $(".join").hide();
             $(".leave").show();
-            // onMessage(room);
-        }
 
-        function leaveAfter(room) {
-            $(".join").show();
-            $(".leave").hide();
-            // onMessage(room);
+            $("#ready").click(function () {
+                room.send("ready", true);
+            });
+
+            $("#leave").click(function () {
+                room.leave();
+                $(".join").show();
+                $(".leave").hide();
+            });
+
+            $("#bet").click(function () {
+                amount = $("#betAmount").val();
+                room.send("bet", parseInt(amount));
+
+                $(".bet").hide();
+            });
+
+            $("#hit").click(function () {
+                room.send("hit");
+            });
         }
 
         function onAdd(room) {
             room.state.onChange(() => {
-                if (room.state.roundState == "dealing") {
+                if (room.state.roundState == "bet") {
                     $(".leave").hide();
                     $(".bet").show();
                 }
+
+                if (room.state.roundState == "shareCard") {
+                    $(".bet").hide();
+                    $(".shareCard").show();
+                }
             });
             room.state.players.onAdd(function (player, sessionId) {
-                // if (player.sessionId == sessionId) {
+                // player.onChange = function (changes) {
+                    
+                // };
                 player.hand.cards.onAdd(function (card, index) {
-                    // card.onChange(function (changes) {
-                    //     console.log("card changed", card, index, changes);
-                    // });
-                    console.log("card added", card, index);
                     switch (card.value.suit) {
                         case 'S':
                             suit = '♠️';
@@ -245,23 +216,22 @@
                             break;
                     }
                     $(`#${sessionId}`).prepend(`<div class="grid-item">
-            <div class="top-left" style="color:${color}">${card.value.value}<br>
-                <div style="color:${color}">${suit}</div>
-            </div>
-            <div></div>
-            <div></div>
-            <div></div>
-            <div class="heart" style="color:${color}">${suit}</div>
-            <div></div>
-            <div></div>
-            <div></div>
-            <div class="bottom-right" style="color:${color}">${card.value.value}<br>
-                <div style="color:${color};">${suit}</div>
-            </div>
-        </div>
-    </div>`);
+                            <div class="top-left" style="color:${color}">${card.value.value}<br>
+                                <div style="color:${color}">${suit}</div>
+                            </div>
+                            <div></div>
+                            <div></div>
+                            <div></div>
+                            <div class="heart" style="color:${color}">${suit}</div>
+                            <div></div>
+                            <div></div>
+                            <div></div>
+                            <div class="bottom-right" style="color:${color}">${card.value.value}<br>
+                                <div style="color:${color};">${suit}</div>
+                            </div>
+                        </div>
+                    </div>`);
                 });
-            // }
             });
         }
 

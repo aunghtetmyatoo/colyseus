@@ -68,7 +68,7 @@ export class Player extends Schema {
 
 //Shan Koe Mee Room State
 export class ShanKoeMeeRoomState extends Schema {
-  @type("string") roundState: "idle" | "dealing" | "turns" | "end" = "idle";
+  @type("string") roundState: "idle" | "bet" | "shareCard" | "viewCard" | "shan89" | "decision" | "result" | "end" = "idle";
   @type("string") currentTurnPlayerId: string;
   @type("uint64") currentTurnTimeoutTimestamp: number = 0;
   @type("uint64") nextRoundStartTimestamp: number = 0;
