@@ -189,9 +189,6 @@
                 }
             });
             room.state.players.onAdd(function (player, sessionId) {
-                // player.onChange = function (changes) {
-                    
-                // };
                 player.hand.cards.onAdd(function (card, index) {
                     switch (card.value.suit) {
                         case 'S':

@@ -11,8 +11,11 @@ export class CardValue extends Schema {
   @type("string") value: string;
 
   public get numericValue() {
-    if (this.value === "A") return 11;
-    if (isNaN(Number(this.value))) return 10;
+    if (this.value === "A") return 41;
+    if (this.value === "J") return 20;
+    if (this.value === "Q") return 30;
+    if (this.value === "K") return 40;
+    // if (isNaN(Number(this.value))) return 10;
     return Number(this.value);
   }
 }
@@ -42,6 +45,7 @@ export class Hand extends Schema {
   @type("number") outCome: number;
   @type("boolean") isShan89: boolean = false;
   @type("boolean") isLose: boolean;
+  @type("number") totalValue: number;
   @type([Card]) cards = new ArraySchema<Card>();
 
   public addCard(visible?: boolean) {
@@ -68,7 +72,15 @@ export class Player extends Schema {
 
 //Shan Koe Mee Room State
 export class ShanKoeMeeRoomState extends Schema {
-  @type("string") roundState: "idle" | "bet" | "shareCard" | "viewCard" | "shan89" | "decision" | "result" | "end" = "idle";
+  @type("string") roundState:
+    | "idle"
+    | "bet"
+    | "shareCard"
+    | "viewCard"
+    | "shan89"
+    | "decision"
+    | "result"
+    | "end" = "idle";
   @type("string") currentTurnPlayerId: string;
   @type("uint64") currentTurnTimeoutTimestamp: number = 0;
   @type("uint64") nextRoundStartTimestamp: number = 0;

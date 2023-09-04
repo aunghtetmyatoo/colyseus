@@ -1,10 +1,13 @@
 import { Room, Client, Delayed } from "@colyseus/core";
 import { MyRoomState } from "./schema/MyRoomState";
 import { ShanKoeMeeRoomState, Player } from "./schema/ShanKoeeMeeRoomState";
-import gameConfig from '../game.config';
+import gameConfig from "../game.config";
 import {
+  calculateWinLose,
   generateRoomId,
   generateUserName,
+  setShan89,
+  setTotalValue,
 } from "./utility";
 
 export class MyRoom extends Room<ShanKoeMeeRoomState> {
@@ -26,7 +29,7 @@ export class MyRoom extends Room<ShanKoeMeeRoomState> {
     return id;
   }
 
-  async onCreate (options: any) {
+  async onCreate(options: any) {
     this.roomId = await this.registerRoomId();
     this.setPrivate();
     this.setState(new ShanKoeMeeRoomState());
@@ -42,7 +45,7 @@ export class MyRoom extends Room<ShanKoeMeeRoomState> {
       this.state.players.get(client.sessionId).ready = state;
       this.triggerNewRoundCheck();
 
-      this.broadcast("log", `${ client.sessionId } ready!`);
+      this.broadcast("log", `${client.sessionId} ready!`);
     });
 
     this.onMessage("autoReady", (client, state: boolean) => {
@@ -53,7 +56,7 @@ export class MyRoom extends Room<ShanKoeMeeRoomState> {
     });
 
     this.onMessage("bet", (client, newBet: number) => {
-      console.log('bet enter', typeof newBet, newBet);
+      console.log("bet enter", typeof newBet, newBet);
       if (
         // this.state.roundState != "idle" || //Cant change bet during round
         // this.state.players.get(client.sessionId).ready || //Cant change bet when ready
@@ -64,13 +67,13 @@ export class MyRoom extends Room<ShanKoeMeeRoomState> {
       newBet = Math.min(Math.max(newBet, 1), 100);
       this.state.players.get(client.sessionId).bet = newBet;
 
-      this.broadcast("log", `${ client.sessionId } ${newBet} bet!`);
+      this.broadcast("log", `${client.sessionId} ${newBet} bet!`);
     });
 
     this.onMessage("hit", (client) => {
       // if (client.sessionId != this.state.currentTurnPlayerId) return;
       const player = this.state.players.get(client.sessionId);
-      if (player.hand.cards.length >= 3) return;
+      if (player.hand.cards.length >= 3 || player.hand.isShan89 == true) return;
       player.hand.addCard();
     });
     // this.onMessage("stay", (client) => {
@@ -79,7 +82,7 @@ export class MyRoom extends Room<ShanKoeMeeRoomState> {
     // });
   }
 
-  onJoin (client: Client, options: any) {
+  onJoin(client: Client, options: any) {
     console.log(client.sessionId, "joined!");
     this.state.players.set(
       client.sessionId,
@@ -90,12 +93,12 @@ export class MyRoom extends Room<ShanKoeMeeRoomState> {
       })
     );
 
-    this.broadcast("log", `${ client.sessionId } joined.`);
+    this.broadcast("log", `${client.sessionId} joined.`);
   }
 
-  onLeave (client: Client, consented: boolean) {
+  onLeave(client: Client, consented: boolean) {
     console.log(client.sessionId, "left!");
-    this.broadcast("log", `${ client.sessionId } left.`);
+    this.broadcast("log", `${client.sessionId} left.`);
   }
 
   onDispose() {
@@ -137,12 +140,18 @@ export class MyRoom extends Room<ShanKoeMeeRoomState> {
       player.hand.clear();
       player.hand.addCard();
       player.hand.addCard();
+
+      setTotalValue(player.hand);
+      setShan89(player.hand);
     }
 
     //Deal dealer cards
-    // this.state.dealerHand.clear();
-    // this.state.dealerHand.addCard();
-    // this.state.dealerHand.addCard(false);
+    this.state.dealerHand.clear();
+    this.state.dealerHand.addCard();
+    this.state.dealerHand.addCard(false);
+
+    setTotalValue(this.state.dealerHand);
+    setShan89(this.state.dealerHand);
 
     //Delay starting next phase
     // await this.delay(3000);
@@ -154,6 +163,21 @@ export class MyRoom extends Room<ShanKoeMeeRoomState> {
 
     // Setup iterator for turns
     this.roundPlayersIdIterator = this.makeRoundIterator();
+
+    this.broadcast(
+      "log",
+      `Banker value is ${this.state.dealerHand.totalValue}!`
+    );
+
+    for (const playerId of this.makeRoundIterator()) {
+      const player = this.state.players.get(playerId);
+
+      const winLose = calculateWinLose(player.hand, this.state.dealerHand);
+
+      player.roundOutcome = winLose;
+      this.broadcast("log", `${player.sessionId} ${winLose}!`);
+      // player.money += outcome.moneyChange;
+    }
 
     // this.turn();
   }
@@ -191,7 +215,7 @@ export class MyRoom extends Room<ShanKoeMeeRoomState> {
 
     this.inactivityTimeoutRef = this.clock.setTimeout(() => {
       // this.log('Inactivity timeout', this.state.currentTurnPlayerId);
-      console.log('Inactivity timeout', this.state.currentTurnPlayerId)
+      console.log("Inactivity timeout", this.state.currentTurnPlayerId);
       this.turn();
     }, gameConfig.inactivityTimeout);
   }
@@ -225,7 +249,7 @@ export class MyRoom extends Room<ShanKoeMeeRoomState> {
     // this.log(`Starting end phase`);
     console.log(`Starting end phase`);
 
-    this.state.roundState = 'end';
+    this.state.roundState = "end";
 
     //Show dealers hidden card
     // this.state.dealerHand.cards.at(1).visible = true;
@@ -272,7 +296,7 @@ export class MyRoom extends Room<ShanKoeMeeRoomState> {
     for (const player of this.state.players.values()) {
       player.hand.clear();
       player.ready = player.autoReady;
-      player.roundOutcome = '';
+      player.roundOutcome = "";
 
       //Remove players that are still disconnected
       // if (player.disconnected) this.deletePlayer(player.sessionId);
@@ -283,7 +307,7 @@ export class MyRoom extends Room<ShanKoeMeeRoomState> {
 
     // this.log(`Starting idle phase`);
     console.log(`Starting idle phase`);
-    this.state.roundState = 'idle';
+    this.state.roundState = "idle";
     this.triggerNewRoundCheck();
   }
 }

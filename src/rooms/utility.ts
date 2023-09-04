@@ -16,6 +16,35 @@ export function generateUserName(): string {
   return "ABC";
 }
 
+export function setTotalValue(hand: Hand): void {
+  let total = 0;
+  hand.cards.forEach((card) => {
+    total += card.value.numericValue;
+  });
+
+  hand.totalValue = total % 10;
+}
+
+export function setShan89(hand: Hand): void {
+  if (hand.totalValue == 9 || hand.totalValue == 8) {
+    hand.isShan89 = true;
+  }
+}
+
+export function calculateWinLose(
+  playerHand: Hand,
+  dealerHand: Hand
+): roundOutcome {
+  let winLose: roundOutcome;
+  if (playerHand.totalValue > dealerHand.totalValue) {
+    winLose = "win";
+  } else {
+    winLose = "lose";
+  }
+
+  return winLose;
+}
+
 /**
  * Given two hands and bet, calculates if player won/lost, and the amount they won
  * @param playerHand The player's hand
