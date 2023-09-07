@@ -56,11 +56,11 @@ export class MyRoom extends Room<ShanKoeMeeRoomState> {
     });
 
     this.onMessage("bet", (client, newBet: number) => {
-      console.log("bet enter", typeof newBet, newBet);
       if (
         // this.state.roundState != "idle" || //Cant change bet during round
         // this.state.players.get(client.sessionId).ready || //Cant change bet when ready
-        !Number.isInteger(newBet) // new bet is invalid
+        !Number.isInteger(newBet) || // new bet is invalid
+        this.state.roundState != "bet"
       )
         return;
       //Constrain bet
@@ -73,7 +73,12 @@ export class MyRoom extends Room<ShanKoeMeeRoomState> {
     this.onMessage("hit", (client) => {
       // if (client.sessionId != this.state.currentTurnPlayerId) return;
       const player = this.state.players.get(client.sessionId);
-      if (player.hand.cards.length >= 3 || player.hand.isShan89 == true) return;
+      if (
+        player.hand.cards.length >= 3 ||
+        player.hand.isShan89 == true ||
+        this.state.roundState != "decision"
+      )
+        return;
       player.hand.addCard();
     });
     // this.onMessage("stay", (client) => {
@@ -126,9 +131,21 @@ export class MyRoom extends Room<ShanKoeMeeRoomState> {
   private async startRound() {
     this.broadcast("log", "Starting round!");
     this.state.roundState = "bet";
-    await this.delay(5000);
+    //** Wait to bet */
+    this.setInactivitySkipTimeout(gameConfig.betDelay);
+    await this.delay(gameConfig.betDelay);
 
     this.state.roundState = "shareCard";
+    //** Wait to share cards */
+    this.setInactivitySkipTimeout(gameConfig.shareCardDelay);
+    await this.delay(gameConfig.shareCardDelay);
+
+    this.state.dealerHand.clear();
+    this.state.dealerHand.addCard();
+    this.state.dealerHand.addCard();
+
+    setTotalValue(this.state.dealerHand);
+    setShan89(this.state.dealerHand);
 
     for (const playerId of this.makeRoundIterator()) {
       const player = this.state.players.get(playerId);
@@ -136,7 +153,6 @@ export class MyRoom extends Room<ShanKoeMeeRoomState> {
       //Take money for bet from player account
       // player.money -= player.bet;
 
-      //Deal player cards
       player.hand.clear();
       player.hand.addCard();
       player.hand.addCard();
@@ -145,28 +161,40 @@ export class MyRoom extends Room<ShanKoeMeeRoomState> {
       setShan89(player.hand);
     }
 
-    //Deal dealer cards
-    this.state.dealerHand.clear();
-    this.state.dealerHand.addCard();
-    this.state.dealerHand.addCard(false);
+    this.state.roundState = "viewCard";
+    //** Wait to view cards */
+    this.setInactivitySkipTimeout(gameConfig.viewCardDelay);
+    await this.delay(gameConfig.viewCardDelay);
 
-    setTotalValue(this.state.dealerHand);
-    setShan89(this.state.dealerHand);
+    this.state.roundState = "decision";
+    //** Wait to pick cards */
+    this.setInactivitySkipTimeout(gameConfig.pickCardDelay);
+    await this.delay(gameConfig.pickCardDelay);
 
-    //Delay starting next phase
-    // await this.delay(3000);
+    for (const playerId of this.makeRoundIterator()) {
+      const player = this.state.players.get(playerId);
+      if (player.hand.cards.length > 2) {
+        setTotalValue(player.hand);
+      }
+    }
 
-    // this.log(`Starting turns phase`);
-    console.log(`Starting turns phase`);
+    this.state.roundState = "bankerDecision";
+    if (this.state.dealerHand.totalValue <= 4) {
+      this.state.dealerHand.addCard();
+      setTotalValue(this.state.dealerHand);
+    }
+    //** Wait to pick cards for banker */
+    this.setInactivitySkipTimeout(gameConfig.pickCardDelay);
+    await this.delay(gameConfig.pickCardDelay);
 
-    // this.state.roundState = "viewCard";
-
-    // Setup iterator for turns
-    this.roundPlayersIdIterator = this.makeRoundIterator();
+    this.state.roundState = "result";
+    //** Wait calculate */
+    this.setInactivitySkipTimeout(gameConfig.pickCardDelay);
+    await this.delay(gameConfig.pickCardDelay);
 
     this.broadcast(
       "log",
-      `Banker value is ${this.state.dealerHand.totalValue}!`
+      `Banker's value is ${this.state.dealerHand.totalValue}!`
     );
 
     for (const playerId of this.makeRoundIterator()) {
@@ -179,45 +207,37 @@ export class MyRoom extends Room<ShanKoeMeeRoomState> {
       // player.money += outcome.moneyChange;
     }
 
-    // this.turn();
+    this.end();
   }
 
-  private turn() {
-    // New turn, do not skip player from previous turn
-    this.state.currentTurnTimeoutTimestamp = 0;
-    this.inactivityTimeoutRef?.clear();
+  private async end() {
+    this.state.roundState = "end";
+    this.state.dealerHand.clear();
 
-    // Get next player
-    const nextPlayer = this.roundPlayersIdIterator.next();
-    this.state.currentTurnPlayerId = nextPlayer.value || "";
+    this.setInactivitySkipTimeout(gameConfig.pickCardDelay);
+    await this.delay(gameConfig.pickCardDelay);
 
-    // If there are no more players, end current round
-    if (nextPlayer.done) {
-      this.endRound();
-      return;
+    for (const player of this.state.players.values()) {
+      player.hand.clear();
     }
 
-    // this.log("Turn", this.state.currentTurnPlayerId);
-    console.log("Turn", this.state.currentTurnPlayerId);
+    this.state.roundState = "idle";
 
-    //Skip round if player has blackjack
-    // if (this.state.players.get(this.state.currentTurnPlayerId).hand.isBlackjack)
-    //   this.turn();
-    // else this.setInactivitySkipTimeout();
-    this.setInactivitySkipTimeout();
+    this.triggerNewRoundCheck();
   }
 
-  private setInactivitySkipTimeout() {
-    this.state.currentTurnTimeoutTimestamp =
-      Date.now() + gameConfig.inactivityTimeout;
+  private setInactivitySkipTimeout(delayTime: number) {
+    this.state.currentTurnTimeoutTimestamp = Date.now() + delayTime;
 
     this.inactivityTimeoutRef?.clear();
 
     this.inactivityTimeoutRef = this.clock.setTimeout(() => {
       // this.log('Inactivity timeout', this.state.currentTurnPlayerId);
       console.log("Inactivity timeout", this.state.currentTurnPlayerId);
-      this.turn();
-    }, gameConfig.inactivityTimeout);
+      this.state.currentTurnTimeoutTimestamp = 0;
+      this.inactivityTimeoutRef?.clear();
+      // this.turn();
+    }, delayTime);
   }
 
   public roundIteratorOffset = 0;
@@ -243,71 +263,5 @@ export class MyRoom extends Room<ShanKoeMeeRoomState> {
 
   private delay(ms: number) {
     return new Promise((resolve) => this.clock.setTimeout(resolve, ms));
-  }
-
-  private async endRound() {
-    // this.log(`Starting end phase`);
-    console.log(`Starting end phase`);
-
-    this.state.roundState = "end";
-
-    //Show dealers hidden card
-    // this.state.dealerHand.cards.at(1).visible = true;
-
-    //Calculate hand value after showing hidden card
-    // this.state.dealerHand.calculateScore();
-
-    //Do not deal dealer cards if all players are busted
-    if (!this.makeRoundIterator().next().done) {
-      //Dealer draws cards until total is at least 17
-      // while (this.state.dealerHand.score < 17) {
-      //   await this.delay(gameConfig.dealerCardDelay);
-      //   this.state.dealerHand.addCard();
-      // }
-
-      //Delay showing round outcome to players
-      await this.delay(gameConfig.roundOutcomeDelay);
-
-      //Settle score between each player that's not busted, and dealer
-      for (const playerId of this.makeRoundIterator()) {
-        const player = this.state.players.get(playerId);
-
-        // const outcome = computeRoundOutcome(
-        //   player.hand,
-        //   this.state.dealerHand,
-        //   player.bet
-        // );
-
-        // player.roundOutcome = outcome.outcome;
-        // player.money += outcome.moneyChange;
-      }
-    }
-
-    //Delay starting next phase
-    await this.delay(
-      gameConfig.roundStateEndTimeBase +
-        this.state.players.size * gameConfig.roundStateEndTimePlayer
-    );
-
-    //Remove dealer cards
-    // this.state.dealerHand.clear();
-
-    //Remove all players cards, and set their ready state
-    for (const player of this.state.players.values()) {
-      player.hand.clear();
-      player.ready = player.autoReady;
-      player.roundOutcome = "";
-
-      //Remove players that are still disconnected
-      // if (player.disconnected) this.deletePlayer(player.sessionId);
-    }
-
-    //Change starting player on next round
-    this.roundIteratorOffset++;
-
-    // this.log(`Starting idle phase`);
-    console.log(`Starting idle phase`);
-    this.state.roundState = "idle";
-    this.triggerNewRoundCheck();
   }
 }

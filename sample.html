@@ -24,6 +24,15 @@
         color: #723EE2;
     }
 
+    .main {
+        display: flex;
+        flex-direction: row;
+        justify-content: space-around;
+        align-items: center;
+        width: 100%;
+        height: 100%;
+    }
+
     .log {
         margin-top: 10px;
         background: #F3F4F6;
@@ -45,7 +54,7 @@
     .grid-container {
         margin-top: 5px;
         display: grid;
-        grid-template-columns: repeat(2, 200px);
+        grid-template-columns: repeat(2, 94px);
         grid-gap: 3em;
         justify-content: center;
     }
@@ -53,11 +62,11 @@
     .grid-item {
         display: grid;
         grid-template-columns: 1fr 1fr 1fr;
-        grid-template-rows: 1fr 2fr 1fr;
+        /* grid-template-rows: 1fr 2fr 1fr; */
         grid-gap: 5px;
         background-color: white;
         color: black;
-        font-size: 1.5em;
+        /* font-size: 1.5em; */
         padding: 10px;
         border-radius: 5%;
         box-shadow: 0px 5px 15px grey;
@@ -78,35 +87,65 @@
         align-self: end;
         transform: rotate(180deg);
     }
+
+    .main .card-panel,
+    .main .dealer-card-panel {
+        /* background: red; */
+        width: 28%;
+        height: 75vh;
+    }
+
+    .card-title {
+        text-align: center;
+        color: #723EE2;
+    }
+
+    .left-time {
+        text-align: center;
+        color: #723EE2;
+        display: flex;
+        margin-left: 10px;
+    }
+
+    .clientId {
+        margin-left: 10px;
+    }
 </style>
 
 <body>
-    <h1 class="title">Colyseus Client</h1>
-    <div class="feature">
+    <h1 class="title">Colyseus Client<span class="clientId"></span></h1>
+    <div class="feature" style="display: flex;">
         <div class="join">
             <button onclick="joinOrCreate()">Create</button>
             <input type="text" id="roomId" placeholder="Enter Room Id">
             <button onclick="joinById()">Join by ID</button>
         </div>
-        <div class="leave">
-            <button id="ready">Ready</button>
-            <button id="leave">Leave</button>
-        </div>
+
+        <button class="ready" id="ready">Ready</button>
+
         <div class="bet">
             <input type="text" id="betAmount" placeholder="Enter Bet Amount">
             <button id="bet">Bet</button>
         </div>
-        <div class="shareCard">
-            <button id="hit">Pick Card</button>
+
+        <button class="hit" id="hit">Pick Card</button>
+
+        <button class="leave" id="leave" style="margin-left: 5px;">Leave</button>
+
+        <div class="left-time">
+            <div class="text"></div>
+            <div class="digit"></div>
         </div>
-        <!-- <button id="join">Join</button> -->
-        <!-- <button id="reconnect">Reconnect</button> -->
-        <!-- <button id="getRooms">Get Available Rooms</button> -->
     </div>
-    <div class="log"></div>
+
+    <div class="main">
+        <div class="card dealer-card-panel"></div>
+        <div class="log"></div>
+        <div class="card card-panel"></div>
+    </div>
     <button class="clear" onclick="clearLog()">Clear Log</button>
 
-    <div class="card"></div>
+    <!-- <div class="card"></div> -->
 
     <script src="https://unpkg.com/colyseus.js@^0.15.0/dist/colyseus.js"></script>
     <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
@@ -120,12 +159,14 @@
             return localStorage.getItem('reconnectionToken');
         }
 
-        $(".leave").hide();
+        $(".ready").hide();
         $(".bet").hide();
-        $(".shareCard").hide();
+        $(".hit").hide();
+        $(".leave").hide();
 
         function joinOrCreate() {
             client.joinOrCreate("my_room", {/* options */ }).then(room => {
+                $(".clientId").text(`(${room.sessionId})`);
                 setReconnectionToken(room.reconnectionToken);
                 $(".log").prepend(`<span>${room.roomId} created!</span>`);
 
@@ -147,21 +188,26 @@
         };
 
         function onProcess(room) {
-            onMessage(room);
-            onAdd(room);
-            $(".card").append(`<div class="grid-container" id="${room.sessionId}"></div>`);
+            $(".dealer-card-panel").append(`<h3 class="card-title">Banker Cards</h3><div class="grid-container" id="${room.roomId}"></div>`);
+            $(".card-panel").append(`<h3 class="card-title">Your Cards</h3><div class="grid-container" id="${room.sessionId}"></div>`);
 
             $(".join").hide();
+            $(".ready").show();
             $(".leave").show();
 
             $("#ready").click(function () {
                 room.send("ready", true);
+                $(".ready").hide();
             });
 
             $("#leave").click(function () {
                 room.leave();
                 $(".join").show();
+                $(".ready").hide();
                 $(".leave").hide();
+                localStorage.removeItem('cards');
+                $(".dealer-card-panel").empty();
+                $(".card-panel").empty();
             });
 
             $("#bet").click(function () {
@@ -173,46 +219,137 @@
 
             $("#hit").click(function () {
                 room.send("hit");
+                $(".hit").hide();
             });
+
+            onMessage(room);
+            onAdd(room);
         }
 
         function onAdd(room) {
+            room.state.players.onAdd((player, sessionId) => {
+                player.hand.cards.onAdd(function (card, index) {
+                    addCard(sessionId, card, false);
+                });
+            });
+
             room.state.onChange(() => {
                 if (room.state.roundState == "bet") {
-                    $(".leave").hide();
                     $(".bet").show();
                 }
 
                 if (room.state.roundState == "shareCard") {
                     $(".bet").hide();
-                    $(".shareCard").show();
+                }
+
+                if (room.state.roundState == "decision") {
+                    room.state.players.onAdd((player, sessionId) => {
+                        if (player.sessionId == room.sessionId && !player.hand.isShan89) {
+                            $(".hit").show();
+                        }
+                    });
+                }
+
+                if (room.state.roundState == "bankerDecision") {
+                    $(".hit").hide();
+                }
+
+                let timestamp = new Date().getTime();
+
+                if (room.state.currentTurnTimeoutTimestamp != 0) {
+                    let time = room.state.currentTurnTimeoutTimestamp - timestamp;
+
+                    let countdownValue = Math.round(time / 1000);
+                    switch (room.state.roundState) {
+                        case "bet":
+                            $(".left-time .text").text("Bet Time: "); break;
+                        case "shareCard":
+                            $(".left-time .text").text("Share Card Time: "); break;
+                        case "viewCard":
+                            $(".left-time .text").text("View Card Time: "); break;
+                        case "decision":
+                            $(".left-time .text").text("Pick Time: "); break;
+                        case "bankerDecision":
+                            $(".left-time .text").text("Banker Pick Time: "); break;
+                        case "result":
+                            $(".left-time .text").text("Calculate Time: "); break;
+                    }
+
+
+                    updateCountdown();
+
+                    function updateCountdown() {
+                        if (countdownValue > 0) {
+                            countdownValue--;
+                            $(".left-time .digit").text(countdownValue + 1);
+                            setTimeout(updateCountdown, 1000); // Update every 1 second
+                        } else {
+                            // $(".left-time .text").text("");
+                            // $(".left-time .digit").text("");
+                        }
+                    }
+                    setTimeout(function () {
+                        $(".left-time .text").text("");
+                        $(".left-time .digit").text("");
+                    }, time);
                 }
             });
-            room.state.players.onAdd(function (player, sessionId) {
-                player.hand.cards.onAdd(function (card, index) {
-                    switch (card.value.suit) {
-                        case 'S':
-                            suit = '♠️';
-                            color = 'black';
-                            break;
-                        case 'H':
-                            suit = '♥';
-                            color = 'red';
-                            break;
-                        case 'D':
-                            suit = '♦️';
-                            color = 'red';
-                            break;
-                        case 'C':
-                            suit = '♣️';
-                            color = 'black';
-                            break;
-                        default:
-                            suit = '';
-                            color = '';
-                            break;
-                    }
-                    $(`#${sessionId}`).prepend(`<div class="grid-item">
+
+            room.state.listen("dealerHand", (currentValue, previousValue) => {
+                if (currentValue.cards != undefined) {
+                    room.state.dealerHand.cards.onAdd(function (card, totalValue) {
+                        addCard(room.roomId, card, true);
+                    });
+                }
+            });
+
+            room.state.listen("roundState", (currentValue, previousValue) => {
+                if (currentValue == "result") {
+                    var dealerCards = localStorage.getItem('cards');
+                    $(`#${room.roomId}`).prepend(dealerCards);
+                }
+
+                if (currentValue == "end") {
+                    $(`#${room.roomId}`).empty();
+                    room.state.dealerHand.onRemove((player, key) => {
+                        console.log(player, "has been removed at", key);
+                    });
+                    room.state.players.onAdd((player, sessionId) => {
+                        // player.hand.cards.onAdd(function (card, index) {
+                        $(`#${sessionId}`).empty();
+                        // });
+                    });
+
+                    localStorage.removeItem('cards');
+                }
+            });
+        }
+
+        function addCard(id, card, localStore = false) {
+            switch (card.value.suit) {
+                case 'S':
+                    suit = '♠️';
+                    color = 'black';
+                    break;
+                case 'H':
+                    suit = '♥';
+                    color = 'red';
+                    break;
+                case 'D':
+                    suit = '♦️';
+                    color = 'red';
+                    break;
+                case 'C':
+                    suit = '♣️';
+                    color = 'black';
+                    break;
+                default:
+                    suit = '';
+                    color = '';
+                    break;
+            }
+
+            let value = `<div class="grid-item">
                             <div class="top-left" style="color:${color}">${card.value.value}<br>
                                 <div style="color:${color}">${suit}</div>
                             </div>
@@ -226,10 +363,22 @@
                             <div class="bottom-right" style="color:${color}">${card.value.value}<br>
                                 <div style="color:${color};">${suit}</div>
                             </div>
-                        </div>
-                    </div>`);
-                });
-            });
+                            </div>
+                        </div>`;
+
+            if (localStore == true) {
+                var existingCard = localStorage.getItem('cards');
+
+                if (existingCard) {
+                    existingCard += value;
+                } else {
+                    existingCard = value; // If the key doesn't exist yet
+                }
+
+                localStorage.setItem('cards', existingCard);
+            } else {
+                $(`#${id}`).prepend(value);
+            }
         }
 
         function onMessage(room) {

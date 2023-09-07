@@ -79,6 +79,7 @@ export class ShanKoeMeeRoomState extends Schema {
     | "viewCard"
     | "shan89"
     | "decision"
+    | "bankerDecision"
     | "result"
     | "end" = "idle";
   @type("string") currentTurnPlayerId: string;

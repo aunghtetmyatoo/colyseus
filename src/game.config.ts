@@ -13,6 +13,11 @@ export default {
   roundStateEndTimeBase: 2500,
   roundStateEndTimePlayer: 500,
 
+  betDelay: 3000,
+  shareCardDelay: 3000,
+  viewCardDelay: 3000,
+  pickCardDelay: 3000,
+
   minBet: 1,
   maxBet: 1000,
   initialPlayerMoney: 10000,
